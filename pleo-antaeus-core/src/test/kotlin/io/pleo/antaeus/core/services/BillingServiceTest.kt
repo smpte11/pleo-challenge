@@ -4,11 +4,13 @@ import arrow.data.ListK
 import arrow.data.extensions.listk.monad.monad
 import io.mockk.every
 import io.mockk.mockk
+import io.pleo.antaeus.core.exceptions.BillingFailedException
 import io.pleo.antaeus.core.external.PaymentProvider
 import io.pleo.antaeus.models.*
 
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
+import java.lang.Exception
 import kotlin.random.Random
 
 
@@ -40,7 +42,7 @@ class BillingServiceTest {
     @Test
     fun `should bill customers`() {
         val billingService = BillingService(ListK.monad(), provider)
-        val result = billingService.bill(invoiceService, customerService)
-        print(result)
+        val task = billingService.bill(invoiceService, customerService)
+        print(task.unsafeRunAsync { either -> either.fold({throw BillingFailedException()}, { print(it) }) })
     }
 }

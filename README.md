@@ -2,7 +2,7 @@
 
 Antaeus (/ænˈtiːəs/), in Greek mythology, a giant of Libya, the son of the sea god Poseidon and the Earth goddess Gaia. He compelled all strangers who were passing through the country to wrestle with him. Whenever Antaeus touched the Earth (his mother), his strength was renewed, so that even if thrown to the ground, he was invincible. Heracles, in combat with him, discovered the source of his strength and, lifting him up from Earth, crushed him to death.
 
-## Coding challenge process
+## Process
 First thing I did was to have a good look at the code and understand what was going on and the relationship between the models. This is where I got my first question mark (`fun Foo.bar(): FooType {  }`). I wasn't familiar with the fact that Kotlin (well I'm not familiar with Kotlin period) supported extension methods and I gotta say it's a bit more explicit than Scala's `implicit/enrichment class` pattern.
 
 In any case I had a pretty good idea of what I wanted to do with this test which was to implement a _"mostly FP-oriented"_ solution leveraging a lib that I saw a while ago.
@@ -20,7 +20,15 @@ My idea was to implement a solution that leveraged parallelization to perform th
 
 The main method charge uses Arrow's `fx` to run the two services procedurally. The resulting call to the service is wrapped into an IO to enable lightweight threading. Each call is made in parallel. `parSequence` then bundles up everything in the final IO that'll spit out our result (for now a list of booleans).
 
+## Things to improve
+### Testing
+1. I found myself writing some redundant boilerplate (mainly creating fake data returned from mocks). I created some (very) basic "test utils" but I've been wondering about creating a random seed/fixture lib to lifts data classes with fake data (a la Factory Boy in Python).
 
+2. One advantage of using `IO` or `effect` is to abstract over async call. I can imagine rewriting `PaymentProvider` to call another service, a another process, a lambda, anything.
+
+3. Instead of using a coroutine as a daemon process to run the billing, I would just put the billing logic in a serverless app. I can then imagine having a fan-out strategy to treat them by batch very quickly (this goes well with `parSequence` that could collect the result or an acknowledgement).
+
+4. The date logic is quite short but weak. I'd wanna know if it should account for regional difference (1 of the month doesn't happen athe the same time and also, might fall on bank days). Right now it just triggers on the first of the machine that the process runs in.
 
 
 

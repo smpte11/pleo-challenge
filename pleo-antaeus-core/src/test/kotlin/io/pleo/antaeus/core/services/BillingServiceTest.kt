@@ -1,13 +1,9 @@
 package io.pleo.antaeus.core.services
 
-import arrow.data.ListK
-import arrow.data.extensions.listk.monad.monad
-import arrow.data.k
 import io.mockk.Called
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import io.pleo.antaeus.core.exceptions.BillingFailedException
 import io.pleo.antaeus.core.external.PaymentProvider
 import io.pleo.antaeus.models.*
 
@@ -16,22 +12,23 @@ import org.junit.jupiter.api.Assertions.*
 import kotlin.random.Random
 
 
-
 class BillingServiceTest {
     private val provider = mockk<PaymentProvider> {
         every { charge(any()) } returns true
     }
     private val invoiceService = mockk<InvoiceService>(relaxed = true) {
-        every { fetch(any()) } returns Invoice(
-                id = Random.nextInt(),
-                customerId = Random.nextInt(),
-                amount = Money(100.toBigDecimal(), TestUtils.randomCurrency()),
-                status = TestUtils.randomStatus()
-        )
+        every { fetchPending() } returns List(10) {
+            Invoice(
+                    id = Random.nextInt(),
+                    customerId = Random.nextInt(),
+                    amount = Money(100.toBigDecimal(), TestUtils.randomCurrency()),
+                    status = InvoiceStatus.PENDING
+            )
+        }
     }
-    private  val customerService = mockk<CustomerService> {
+    private val customerService = mockk<CustomerService> {
         every { fetchAll() } returns List(10) {
-            Customer(it, TestUtils.randomCurrency() )
+            Customer(it, TestUtils.randomCurrency())
         }
     }
 

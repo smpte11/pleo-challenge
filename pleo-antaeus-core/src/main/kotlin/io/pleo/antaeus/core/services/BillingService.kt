@@ -16,11 +16,8 @@ class BillingService(private val paymentProvider: PaymentProvider) {
     private fun log(message: String) = println(message)
 
     fun bill(invoiceService: InvoiceService, customerService: CustomerService): BillingTask = fx {
-        !effect { log("Fetching customers...") }
-        val customers = customerService.fetchAll()
-        !effect { log("Done with customers") }
-        !effect { log("Fetching all invoices...") }
-        val invoices = customers.map { invoiceService.fetch(it.id) }
+        !effect { log("Fetching pending invoices invoices...") }
+        val invoices = invoiceService.fetchPending()
         !effect { log("Done with building invoice list") }
         !effect { log("Billing customers...") }
         !NonBlocking.parSequence(invoices.map { IO.just(paymentProvider.charge(it)) })

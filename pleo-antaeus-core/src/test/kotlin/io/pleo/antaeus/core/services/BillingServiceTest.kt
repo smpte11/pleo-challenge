@@ -1,6 +1,7 @@
 package io.pleo.antaeus.core.services
 
 import io.mockk.*
+import io.pleo.antaeus.core.exceptions.CustomerNotFoundException
 import io.pleo.antaeus.core.external.PaymentProvider
 import io.pleo.antaeus.models.*
 
@@ -60,6 +61,19 @@ class BillingServiceTest {
         verify {
             provider.charge(expected)
             invoiceService.update(expected)
+        }
+    }
+
+    @Test
+    fun `should handle when a customer is not found`() {
+        val slot = slot<Exception>()
+        val stubbedBillingService = spyk(BillingService(provider))
+        every { stubbedBillingService.handleFailure(capture(slot)) }
+
+        every { provider.charge(any()) } throws CustomerNotFoundException(1)
+        stubbedBillingService.bill(invoiceService).unsafeRunSync()
+        verify {
+           stubbedBillingService.handleFailure(match { it is CustomerNotFoundException })
         }
     }
 }

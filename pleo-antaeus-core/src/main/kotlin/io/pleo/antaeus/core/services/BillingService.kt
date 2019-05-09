@@ -13,13 +13,13 @@ import io.pleo.antaeus.core.external.PaymentProvider
 typealias BillingTask = IO<List<*>>
 
 class BillingService(private val paymentProvider: PaymentProvider) {
-    private fun log(message: String) = println(message)
+    fun logger(message: String) = println(message)
 
     fun bill(invoiceService: InvoiceService): BillingTask = fx {
-        !effect { log("Fetching pending invoices invoices...") }
+        !effect { logger("Fetching pending invoices invoices...") }
         val invoices = invoiceService.fetchPending()
-        !effect { log("Done with building invoice list") }
-        !effect { log("Billing customers...") }
+        !effect { logger("Done with building invoice list") }
+        !effect { logger("Billing customers...") }
         !NonBlocking.parSequence(
                 invoices.map {invoice ->
                     IO {paymentProvider.charge(invoice) }
@@ -27,4 +27,8 @@ class BillingService(private val paymentProvider: PaymentProvider) {
                 }
         )
     }.fix()
+
+    fun handleFailure(vararg i: Exception) = fx {
+        !effect { logger("There was a problem handling customer 1") }
+    }
 }

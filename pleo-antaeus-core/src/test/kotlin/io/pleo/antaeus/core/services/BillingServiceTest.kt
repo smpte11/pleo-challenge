@@ -68,12 +68,13 @@ class BillingServiceTest {
     fun `should handle when a customer is not found`() {
         val slot = slot<Exception>()
         val stubbedBillingService = spyk(BillingService(provider))
-        every { stubbedBillingService.handleFailure(capture(slot)) }
+        every { stubbedBillingService.handleBillingFailure(capture(slot)) }
 
         every { provider.charge(any()) } throws CustomerNotFoundException(1)
         stubbedBillingService.bill(invoiceService).unsafeRunSync()
         verify {
-           stubbedBillingService.handleFailure(match { it is CustomerNotFoundException })
+            invoiceService.update(any()) wasNot Called // Throwing from lifted IO bypassed flatMap call
+            stubbedBillingService.handleBillingFailure(match { it is CustomerNotFoundException })
         }
     }
 }

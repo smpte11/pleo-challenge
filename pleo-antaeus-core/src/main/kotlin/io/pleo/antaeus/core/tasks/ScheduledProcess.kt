@@ -1,9 +1,7 @@
 package io.pleo.antaeus.core.tasks
 
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import arrow.effects.IO
+import arrow.effects.extensions.io.fx.fx
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -13,14 +11,15 @@ import java.time.temporal.ChronoUnit
 interface Process {
     var isRunning: Boolean
 
-    fun run(task: suspend () -> Unit): Job
+    fun run(task: () -> Unit): IO<Unit>
 }
 
 @Suppress("MemberVisibilityCanBePrivate")
 class ScheduledProcess(private val on: LocalDateTime) : Process {
     override var isRunning = true
 
-    override fun run(task: suspend () -> Unit): Job = GlobalScope.launch {
+    override fun run(task: () -> Unit): IO<Unit> = fx {
+        continueOn(NonBlocking)
         do when {
             isTaskDate() -> {
                 /**
@@ -30,8 +29,9 @@ class ScheduledProcess(private val on: LocalDateTime) : Process {
                  * and coroutine scope and decided to drop it. I'd like to revisit this idea in the future though.
                  */
 //                    task.andThen { delay(untilNextDate()) }
-                task()
-                delay(untilNextDate())
+//                test()
+                !IO { task() }
+                !effect { waitForIt(untilNextDate()) }
             }
         }
         while (isRunning)
@@ -48,5 +48,7 @@ class ScheduledProcess(private val on: LocalDateTime) : Process {
         val fromDateTime = LocalDate.of(on.year, on.month, on.dayOfMonth)
         return now.isEqual(fromDateTime)
     }
+
+    private fun waitForIt(delayOf: Long) = Thread.sleep(delayOf)
 }
 

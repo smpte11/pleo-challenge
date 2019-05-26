@@ -25,35 +25,29 @@ class BillingService(private val paymentProvider: PaymentProvider) {
         !effect { logger("Done with building invoice list") }
         !effect { logger("Billing customers...") }
         !NonBlocking.parSequence(
-            invoices.map {invoice ->
-                IO { paymentProvider.charge(invoice) }
-                    .flatMap { IO {invoiceService.update(invoice)} }
-                        .handleError { this@BillingService.handleBillingFailure(it) }
-            }
+                invoices.map { invoice ->
+                    IO { paymentProvider.charge(invoice) }
+                            .flatMap { IO { invoiceService.update(invoice) } }
+                            .handleError { this@BillingService.handleBillingErrors(it) }
+                }
         )
     }.fix()
 
-    fun handleBillingFailure(t: Throwable) = when(t) {
-        is CustomerNotFoundException -> handleCustomerNotFound(t)
-        is CurrencyMismatchException -> handleCurrencyMismatch(t)
-        is InvoiceNotFoundException -> handleInvoiceNotFound(t)
-        is NetworkException -> handleNetworkException(t)
-        else -> IO { print("") }
+    fun handleBillingErrors(t: Throwable) = fx {
+        when (t) {
+            is CustomerNotFoundException -> !effect { handleCustomerNotFound(t) }
+            is CurrencyMismatchException -> !effect {handleCurrencyMismatch(t)}
+            is InvoiceNotFoundException -> !effect{handleInvoiceNotFound(t)}
+            is NetworkException -> !effect {handleNetworkException(t)}
+            else -> !effect { logger("Unknown error happened. Please contact whoever is in charge...") }
+        }
     }
 
-    private fun handleCustomerNotFound(t: CustomerNotFoundException) = fx {
-        !effect{ t.message?.let { logger(it) } }
-    }
+    private fun handleCustomerNotFound(t: CustomerNotFoundException) = t.message?.let { logger(it) }
 
-    private fun handleCurrencyMismatch(t: CurrencyMismatchException) = fx {
-        !effect{ t.message?.let { logger(it) } }
-    }
+    private fun handleCurrencyMismatch(t: CurrencyMismatchException) = t.message?.let { logger(it) }
 
-    private fun handleInvoiceNotFound(t: InvoiceNotFoundException) = fx {
-        !effect{ t.message?.let { logger(it) } }
-    }
+    private fun handleInvoiceNotFound(t: InvoiceNotFoundException) = t.message?.let { logger(it) }
 
-    private fun handleNetworkException(t: NetworkException) = fx {
-        !effect{ t.message?.let { logger(it) } }
-    }
+    private fun handleNetworkException(t: NetworkException) =  t.message?.let { logger(it) }
 }

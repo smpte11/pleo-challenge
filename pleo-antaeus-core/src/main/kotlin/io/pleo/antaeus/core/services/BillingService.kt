@@ -27,21 +27,20 @@ class BillingService(private val paymentProvider: PaymentProvider) {
         !effect { logger("Billing customers...") }
         !NonBlocking.parSequence(
                 invoices.map { invoice ->
-                    IO { paymentProvider.charge(invoice) }
-                            .flatMap { wasChargedSuccessfully: Boolean ->
-                                when (wasChargedSuccessfully) {
-                                    true -> IO { invoiceService.update(invoice) }
-                                    false -> this@BillingService.handleBillingFailures(invoice)
-                                }
-                            }
-                            .handleError { this@BillingService.handleBillingErrors(it) }
+                    fx {
+                        when (!IO { paymentProvider.charge(invoice) }) {
+                            true -> !IO { invoiceService.update(invoice) }
+                            false -> this@BillingService.handleBillingFailures(invoice)
+                        }
+                    }.handleError { this@BillingService.handleBillingErrors(it) }
                 }
         )
     }.fix()
 
     fun handleBillingFailures(invoice: Invoice) = fx {
         !effect { logger("Failure to bill customer ${invoice.customerId}") }
-    }
+        invoice
+    }.unsafeRunSync()
 
     fun handleBillingErrors(t: Throwable) = fx {
         when (t) {

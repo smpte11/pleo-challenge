@@ -53,12 +53,14 @@ class BillingServiceTest {
 
     @Test
     fun `should correctly bill customers`() {
+        every { provider.charge(any()) } returns true
         every { invoiceService.update(any()) } answers {
             Invoice(1, 3, Money(100.toBigDecimal(), Currency.DKK), InvoiceStatus.PAID)
         }
         billingService.bill(invoiceService).unsafeRunSync()
+
         val expected = invoiceService.fetchPending()[0]
-        verify {
+        verifyOrder {
             provider.charge(expected)
             invoiceService.update(expected)
         }

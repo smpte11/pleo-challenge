@@ -9,6 +9,7 @@ import io.pleo.antaeus.core.exceptions.CustomerNotFoundException
 import io.pleo.antaeus.core.exceptions.InvoiceNotFoundException
 import io.pleo.antaeus.core.exceptions.NetworkException
 import io.pleo.antaeus.core.external.PaymentProvider
+import io.pleo.antaeus.models.Invoice
 
 /**
  * Simple type alias to show that the return value of this method is NOT the result of the computation
@@ -27,21 +28,30 @@ class BillingService(private val paymentProvider: PaymentProvider) {
         !NonBlocking.parSequence(
                 invoices.map { invoice ->
                     IO { paymentProvider.charge(invoice) }
-                            .flatMap { IO { invoiceService.update(invoice) } }
+                            .flatMap { wasChargedSuccessfully: Boolean ->
+                                when (wasChargedSuccessfully) {
+                                    true -> IO { invoiceService.update(invoice) }
+                                    false -> this@BillingService.handleBillingFailures(invoice)
+                                }
+                            }
                             .handleError { this@BillingService.handleBillingErrors(it) }
                 }
         )
     }.fix()
 
+    fun handleBillingFailures(invoice: Invoice) = fx {
+        !effect { logger("Failure to bill customer ${invoice.customerId}") }
+    }
+
     fun handleBillingErrors(t: Throwable) = fx {
         when (t) {
             is CustomerNotFoundException -> !effect { handleCustomerNotFound(t) }
-            is CurrencyMismatchException -> !effect {handleCurrencyMismatch(t)}
-            is InvoiceNotFoundException -> !effect{handleInvoiceNotFound(t)}
-            is NetworkException -> !effect {handleNetworkException(t)}
+            is CurrencyMismatchException -> !effect { handleCurrencyMismatch(t) }
+            is InvoiceNotFoundException -> !effect { handleInvoiceNotFound(t) }
+            is NetworkException -> !effect { handleNetworkException(t) }
             else -> !effect { logger("Unknown error happened. Please contact whoever is in charge...") }
         }
-    }
+    }.unsafeRunSync()
 
     private fun handleCustomerNotFound(t: CustomerNotFoundException) = t.message?.let { logger(it) }
 
@@ -49,5 +59,5 @@ class BillingService(private val paymentProvider: PaymentProvider) {
 
     private fun handleInvoiceNotFound(t: InvoiceNotFoundException) = t.message?.let { logger(it) }
 
-    private fun handleNetworkException(t: NetworkException) =  t.message?.let { logger(it) }
+    private fun handleNetworkException(t: NetworkException) = t.message?.let { logger(it) }
 }

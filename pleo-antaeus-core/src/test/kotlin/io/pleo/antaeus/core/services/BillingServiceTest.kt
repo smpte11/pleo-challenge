@@ -65,6 +65,19 @@ class BillingServiceTest {
     }
 
     @Test
+    fun `should handle a failure to charge a customer`() {
+        val stubbedBillingService = spyk(BillingService(provider))
+        every { stubbedBillingService.handleBillingFailures(any()) }
+        every { provider.charge(any()) } returns false andThen true
+
+        stubbedBillingService.bill(invoiceService).unsafeRunSync()
+
+        verify(exactly = 1) {
+            stubbedBillingService.handleBillingFailures(any())
+        }
+    }
+
+    @Test
     fun `should handle when a customer is not found`() {
         val slot = slot<Exception>()
         val stubbedBillingService = spyk(BillingService(provider))

@@ -9,6 +9,7 @@ import io.pleo.antaeus.core.exceptions.CustomerNotFoundException
 import io.pleo.antaeus.core.exceptions.InvoiceNotFoundException
 import io.pleo.antaeus.core.exceptions.NetworkException
 import io.pleo.antaeus.core.external.PaymentProvider
+import io.pleo.antaeus.models.CustomerStatus
 import io.pleo.antaeus.models.Invoice
 
 /**
@@ -17,10 +18,14 @@ import io.pleo.antaeus.models.Invoice
  */
 typealias BillingTask = IO<List<*>>
 
-class BillingService(private val paymentProvider: PaymentProvider) {
+class BillingService(
+        private val paymentProvider: PaymentProvider,
+        val customerService: CustomerService,
+        private val invoiceService: InvoiceService
+) {
     private fun logger(message: String) = println(message)
 
-    fun bill(invoiceService: InvoiceService): BillingTask = fx {
+    fun bill(): BillingTask = fx {
         !effect { logger("Fetching pending invoices invoices...") }
         val invoices = invoiceService.fetchPending()
         !effect { logger("Done with building invoice list") }
@@ -29,7 +34,7 @@ class BillingService(private val paymentProvider: PaymentProvider) {
                 invoices.map { invoice ->
                     fx {
                         when (!IO { paymentProvider.charge(invoice) }) {
-                            true -> !IO { invoiceService.update(invoice) }
+                            true -> !IO { invoiceService.updateStatus(invoice) }
                             false -> this@BillingService.handleBillingFailures(invoice)
                         }
                     }.handleError { this@BillingService.handleBillingErrors(it) }
@@ -39,6 +44,8 @@ class BillingService(private val paymentProvider: PaymentProvider) {
 
     fun handleBillingFailures(invoice: Invoice) = fx {
         !effect { logger("Failure to bill customer ${invoice.customerId}") }
+        val customer = !IO { customerService.fetch(invoice.customerId) }
+        !IO { customerService.updateStatus(customer.copy(customer.id, customer.currency, CustomerStatus.LATE)) }
         invoice
     }.unsafeRunSync()
 

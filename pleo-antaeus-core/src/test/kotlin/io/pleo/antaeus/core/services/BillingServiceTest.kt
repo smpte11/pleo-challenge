@@ -7,6 +7,7 @@ import io.pleo.antaeus.models.*
 
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
+import kotlin.math.exp
 import kotlin.random.Random
 
 
@@ -23,11 +24,16 @@ class BillingServiceTest {
     private val provider = mockk<PaymentProvider> {
         every { charge(any()) } returns true
     }
+
     private val invoiceService = mockk<InvoiceService>(relaxed = true) {
         every { fetchPending() } returns List(10) { seed() }
     }
 
-    private val customerService = mockk<CustomerService>()
+    private val customerSlot = slot<Customer>()
+    private val customer = Customer(1, TestUtils.randomCurrency(), CustomerStatus.ONTIME)
+    private val customerService = mockk<CustomerService> {
+        every { fetch(any()) } returns customer
+    }
 
     private val billingService = BillingService(provider, customerService, invoiceService)
 
@@ -66,11 +72,6 @@ class BillingServiceTest {
 
     @Test
     fun `should handle a failure to charge a customer`() {
-        val customerSlot = slot<Customer>()
-        val customer = Customer(1, TestUtils.randomCurrency(), CustomerStatus.ONTIME)
-        every { customerService.updateStatus(capture(customerSlot)) } returns customer
-        every { customerService.fetch(any()) } returns customer
-
         val stubbedBillingService = spyk(BillingService(provider, customerService, invoiceService))
         every { stubbedBillingService.handleBillingFailures(any()) }
         every { provider.charge(any()) } returns false andThen true
@@ -89,13 +90,19 @@ class BillingServiceTest {
     fun `should handle when a customer is not found`() {
         val slot = slot<Exception>()
         val stubbedBillingService = spyk(BillingService(provider, customerService, invoiceService))
-        every { stubbedBillingService.handleBillingErrors(capture(slot)) }
+        every { stubbedBillingService.handleBillingErrors(any(), capture(slot)) }
 
-        every { provider.charge(any()) } throws CustomerNotFoundException(1)
+        every { customerService.updateStatus(capture(customerSlot)) } returns customer
+
+        every { provider.charge(any()) } throws CustomerNotFoundException(1) andThen true
+
         stubbedBillingService.bill().unsafeRunSync()
+
         verify {
             invoiceService.updateStatus(any()) wasNot Called // Throwing from lifted IO bypassed flatMap call
-            stubbedBillingService.handleBillingErrors(match { it is CustomerNotFoundException })
+            stubbedBillingService.handleBillingErrors(any(), match { it is CustomerNotFoundException })
+            customerService
+                    .updateStatus(customer = eq(customer.copy(customer.id, customer.currency, CustomerStatus.INACTIVE)))
         }
     }
 }

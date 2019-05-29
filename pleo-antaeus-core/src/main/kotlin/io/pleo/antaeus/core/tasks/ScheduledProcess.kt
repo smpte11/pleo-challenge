@@ -19,7 +19,6 @@ class ScheduledProcess(private val on: LocalDateTime) : Process {
     override var isRunning = true
 
     override fun run(task: () -> Unit): IO<Unit> = fx {
-        continueOn(NonBlocking)
         do when {
             isTaskDate() -> {
                 /**

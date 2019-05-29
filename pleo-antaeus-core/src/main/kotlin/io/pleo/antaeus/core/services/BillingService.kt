@@ -37,7 +37,7 @@ class BillingService(
                             true -> !IO { invoiceService.updateStatus(invoice) }
                             false -> this@BillingService.handleBillingFailures(invoice)
                         }
-                    }.handleError { this@BillingService.handleBillingErrors(it) }
+                    }.handleError { this@BillingService.handleBillingErrors(invoice, it) }
                 }
         )
     }.fix()
@@ -49,9 +49,9 @@ class BillingService(
         invoice
     }.unsafeRunSync()
 
-    fun handleBillingErrors(t: Throwable) = fx {
+    fun handleBillingErrors(invoice: Invoice, t: Throwable) = fx {
         when (t) {
-            is CustomerNotFoundException -> !effect { handleCustomerNotFound(t) }
+            is CustomerNotFoundException -> !effect { handleCustomerNotFound(invoice) }
             is CurrencyMismatchException -> !effect { handleCurrencyMismatch(t) }
             is InvoiceNotFoundException -> !effect { handleInvoiceNotFound(t) }
             is NetworkException -> !effect { handleNetworkException(t) }
@@ -59,7 +59,12 @@ class BillingService(
         }
     }.unsafeRunSync()
 
-    private fun handleCustomerNotFound(t: CustomerNotFoundException) = t.message?.let { logger(it) }
+    private fun handleCustomerNotFound(invoice: Invoice) = fx {
+        !effect { logger("Customer ${invoice.customerId} not found. Marking as inactive...") }
+        val customer = !IO { customerService.fetch(invoice.customerId) }
+        !IO { customerService.updateStatus(customer.copy(customer.id, customer.currency, CustomerStatus.INACTIVE)) }
+        invoice
+    }.unsafeRunSync()
 
     private fun handleCurrencyMismatch(t: CurrencyMismatchException) = t.message?.let { logger(it) }
 

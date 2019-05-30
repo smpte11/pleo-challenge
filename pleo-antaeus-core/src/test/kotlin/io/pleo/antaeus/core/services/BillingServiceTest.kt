@@ -2,6 +2,7 @@ package io.pleo.antaeus.core.services
 
 import io.mockk.*
 import io.pleo.antaeus.core.exceptions.CustomerNotFoundException
+import io.pleo.antaeus.core.exceptions.NetworkException
 import io.pleo.antaeus.core.external.PaymentProvider
 import io.pleo.antaeus.models.*
 
@@ -14,10 +15,10 @@ import kotlin.random.Random
 class BillingServiceTest {
     val seed = {
         Invoice(
-                id = Random.nextInt(),
-                customerId = Random.nextInt(),
-                amount = Money(100.toBigDecimal(), TestUtils.randomCurrency()),
-                status = InvoiceStatus.PENDING
+            id = Random.nextInt(),
+            customerId = Random.nextInt(),
+            amount = Money(100.toBigDecimal(), TestUtils.randomCurrency()),
+            status = InvoiceStatus.PENDING
         )
     }
 
@@ -26,7 +27,7 @@ class BillingServiceTest {
     }
 
     private val invoiceService = mockk<InvoiceService>(relaxed = true) {
-        every { fetchPending() } returns List(10) { seed() }
+        every { fetchPending() } returns List(size = 5) { seed() }
     }
 
     private val customerSlot = slot<Customer>()
@@ -41,8 +42,8 @@ class BillingServiceTest {
     @Test
     fun `triggering billing task should be done explicitly with a certain execution type`() {
         val results = billingService.bill().unsafeRunSync()
-        assertEquals(results.size, 10)
-        verify(exactly = 10) {
+        assertEquals(5, results.size)
+        verify(exactly = 5) {
             provider.charge(allAny())
         }
     }
@@ -57,8 +58,9 @@ class BillingServiceTest {
 
     @Test
     fun `should correctly bill customers`() {
+        val slot = slot<Invoice>()
         every { provider.charge(any()) } returns true
-        every { invoiceService.updateStatus(any()) } answers {
+        every { invoiceService.updateStatus(capture(slot)) } answers {
             Invoice(1, 3, Money(100.toBigDecimal(), Currency.DKK), InvoiceStatus.PAID)
         }
         billingService.bill().unsafeRunSync()
@@ -94,7 +96,7 @@ class BillingServiceTest {
 
         every { customerService.updateStatus(capture(customerSlot)) } returns customer
 
-        every { provider.charge(any()) } throws CustomerNotFoundException(1) andThen true
+        every { provider.charge(any()) } throws CustomerNotFoundException(customer.id) andThen true
 
         stubbedBillingService.bill().unsafeRunSync()
 
@@ -103,6 +105,20 @@ class BillingServiceTest {
             stubbedBillingService.handleBillingErrors(any(), match { it is CustomerNotFoundException })
             customerService
                     .updateStatus(customer = eq(customer.copy(customer.id, customer.currency, CustomerStatus.INACTIVE)))
+        }
+    }
+
+    @Test
+    fun `should handle handle network exceptions with retries`() {
+        val slot = slot<Exception>()
+        val stubbedBillingService = spyk(BillingService(provider, customerService, invoiceService))
+        every { stubbedBillingService.handleBillingErrors(any(), capture(slot)) }
+        every { provider.charge(any()) } throws NetworkException() andThen true
+
+        stubbedBillingService.bill().unsafeRunSync()
+
+        verify(atLeast = 6) {
+            provider.charge(any())
         }
     }
 }

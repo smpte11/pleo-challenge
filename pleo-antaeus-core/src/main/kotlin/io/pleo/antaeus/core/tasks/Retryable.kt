@@ -1,6 +1,8 @@
 package io.pleo.antaeus.core.tasks
 
-import arrow.core.*
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 
 interface Retryable {
     tailrec fun <T> retry(times: Int, fn: () -> T): Either<String, T> {

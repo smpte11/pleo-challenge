@@ -1,24 +1,24 @@
 package io.pleo.antaeus.core.services
 
 import io.mockk.*
+import io.pleo.antaeus.core.exceptions.CurrencyMismatchException
 import io.pleo.antaeus.core.exceptions.CustomerNotFoundException
+import io.pleo.antaeus.core.exceptions.InvoiceNotFoundException
 import io.pleo.antaeus.core.exceptions.NetworkException
 import io.pleo.antaeus.core.external.PaymentProvider
 import io.pleo.antaeus.models.*
-
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Assertions.*
-import kotlin.math.exp
 import kotlin.random.Random
 
 
 class BillingServiceTest {
     val seed = {
         Invoice(
-            id = Random.nextInt(),
-            customerId = Random.nextInt(),
-            amount = Money(100.toBigDecimal(), TestUtils.randomCurrency()),
-            status = InvoiceStatus.PENDING
+                id = Random.nextInt(),
+                customerId = Random.nextInt(),
+                amount = Money(100.toBigDecimal(), TestUtils.randomCurrency()),
+                status = InvoiceStatus.PENDING
         )
     }
 
@@ -84,7 +84,7 @@ class BillingServiceTest {
         verify(exactly = 1) {
             stubbedBillingService.handleBillingFailures(any())
             customerService
-                .updateStatus(customer = eq(customer.copy(customer.id, customer.currency, CustomerStatus.LATE)))
+                    .updateStatus(customer = eq(customer.copy(customer.id, customer.currency, CustomerStatus.LATE)))
         }
     }
 
@@ -109,16 +109,73 @@ class BillingServiceTest {
     }
 
     @Test
-    fun `should handle handle network exceptions with retries`() {
+    fun `should handle network exceptions with retries`() {
         val slot = slot<Exception>()
         val stubbedBillingService = spyk(BillingService(provider, customerService, invoiceService))
         every { stubbedBillingService.handleBillingErrors(any(), capture(slot)) }
+        every { invoiceService.fetchPending() } returns List(size = 1) { seed() }
+        every { provider.charge(any()) } throws NetworkException()
+
+        stubbedBillingService.bill().unsafeRunSync()
+
+        verify(atLeast = 1) { provider.charge(any()) }
+        verify {
+            stubbedBillingService.handleBillingErrors(any(), match { it is NetworkException })
+            invoiceService.updateStatus(any()) wasNot Called
+        }
+    }
+
+    @Test
+    fun `should handle network exceptions with retries and succeed`() {
+        val slot = slot<Exception>()
+        val stubbedBillingService = spyk(BillingService(provider, customerService, invoiceService))
+        every { stubbedBillingService.handleBillingErrors(any(), capture(slot)) }
+        every { invoiceService.fetchPending() } returns List(size = 1) { seed() }
         every { provider.charge(any()) } throws NetworkException() andThen true
 
         stubbedBillingService.bill().unsafeRunSync()
 
-        verify(atLeast = 6) {
+        verify(exactly = 2) {
             provider.charge(any())
+        }
+        verify {
+            invoiceService.updateStatus(match { it.status == InvoiceStatus.PAID })
+        }
+    }
+
+    @Test
+    fun `should handle an missing invoice`() {
+        val slot = slot<Exception>()
+        val invoiceSlot = slot<Invoice>()
+        val stubbedBillingService = spyk( BillingService(provider, customerService, invoiceService))
+        every { stubbedBillingService.handleBillingErrors(capture(invoiceSlot), capture(slot)) }
+        every { provider.charge(any()) } throws InvoiceNotFoundException(1) andThen true
+
+        stubbedBillingService.bill().unsafeRunSync()
+
+        verify(atLeast = 1) {
+            stubbedBillingService.handleBillingErrors(
+                match { it.status == InvoiceStatus.PENDING },
+                match { it is InvoiceNotFoundException }
+            )
+        }
+    }
+
+    @Test
+    fun `should handle an issue with the currency used`() {
+        val slot = slot<Exception>()
+        val invoiceSlot = slot<Invoice>()
+        val stubbedBillingService = spyk( BillingService(provider, customerService, invoiceService))
+        every { stubbedBillingService.handleBillingErrors(capture(invoiceSlot), capture(slot)) }
+        every { provider.charge(any()) } throws CurrencyMismatchException(1, 2) andThen true
+
+        stubbedBillingService.bill().unsafeRunSync()
+
+        verify(atLeast = 1) {
+            stubbedBillingService.handleBillingErrors(
+                    match { it.status == InvoiceStatus.PENDING },
+                    match { it is CurrencyMismatchException }
+            )
         }
     }
 }

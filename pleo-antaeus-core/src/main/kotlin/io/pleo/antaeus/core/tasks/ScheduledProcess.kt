@@ -1,6 +1,7 @@
 package io.pleo.antaeus.core.tasks
 
 import arrow.effects.IO
+import arrow.effects.IODispatchers
 import arrow.effects.extensions.io.fx.fx
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -19,6 +20,7 @@ class ScheduledProcess(private val on: LocalDateTime) : Process {
     override var isRunning = true
 
     override fun run(task: () -> Unit): IO<Unit> = fx {
+        continueOn(IODispatchers.CommonPool)
         do when {
             isTaskDate() -> {
                 /**

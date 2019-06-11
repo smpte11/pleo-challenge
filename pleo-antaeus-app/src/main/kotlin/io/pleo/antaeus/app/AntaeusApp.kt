@@ -59,16 +59,13 @@ fun main() {
     // Create core services
     val invoiceService = InvoiceService(dal = dal)
     val customerService = CustomerService(dal = dal)
+    val billingService = BillingService(paymentProvider, customerService, invoiceService)
 
     // This is _your_ billing service to be included where you see fit
     unsafe {
         runNonBlocking({
-            ScheduledProcess(LocalDateTime.now(ZoneId.of("UTF"))).run {
-                BillingService(
-                        paymentProvider = paymentProvider,
-                        customerService = customerService,
-                        invoiceService = invoiceService
-                ).bill()
+            ScheduledProcess(LocalDateTime.now(ZoneId.of("UTC"))).run {
+                billingService.bill().attempt().unsafeRunAsync {  }
             }
         }, { print("Issue running process") })
     }
